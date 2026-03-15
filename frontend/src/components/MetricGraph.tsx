@@ -23,7 +23,7 @@ interface ChartPoint {
 function CustomTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200">
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-200 shadow">
       {payload[0].value}
     </div>
   );
@@ -45,7 +45,7 @@ export function MetricGraph({ history, metricKey }: MetricGraphProps) {
 
   if (data.length < 2) {
     return (
-      <div className="h-16 flex items-center justify-center text-gray-600 text-xs">
+      <div className="h-16 flex items-center justify-center text-gray-400 dark:text-gray-600 text-xs">
         Collecting data…
       </div>
     );

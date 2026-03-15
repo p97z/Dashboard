@@ -196,5 +196,54 @@ app.post('/api/containers/:id/stop', async (req, res) => {
   }
 });
 
+// ── Info ──────────────────────────────────────────────────────────────────────
+
+app.get('/api/info', (_req, res) => {
+  res.json({ hostname: os.hostname() });
+});
+
+// ── Container Logs ────────────────────────────────────────────────────────────
+
+interface LogLine {
+  stream: 'stdout' | 'stderr';
+  text: string;
+}
+
+function parseLogs(buffer: Buffer): LogLine[] {
+  // Try multiplexed Docker stream format
+  if (buffer.length >= 8) {
+    const streamType = buffer[0];
+    const isValid = streamType <= 2 && buffer[1] === 0 && buffer[2] === 0 && buffer[3] === 0;
+    if (isValid) {
+      const lines: LogLine[] = [];
+      let offset = 0;
+      while (offset + 8 <= buffer.length) {
+        const type = buffer[offset];
+        const size = buffer.readUInt32BE(offset + 4);
+        offset += 8;
+        if (size === 0) continue;
+        if (offset + size > buffer.length) break;
+        const text = buffer.subarray(offset, offset + size).toString('utf8').replace(/\r?\n$/, '');
+        offset += size;
+        if (text) lines.push({ stream: type === 2 ? 'stderr' : 'stdout', text });
+      }
+      if (lines.length > 0) return lines;
+    }
+  }
+  // Fallback: plain text
+  return buffer.toString('utf8').split('\n').filter(Boolean).map(text => ({ stream: 'stdout', text }));
+}
+
+app.get('/api/containers/:id/logs', async (req, res) => {
+  const tail = Math.min(parseInt(req.query.tail as string) || 200, 1000);
+  try {
+    const container = docker.getContainer(req.params.id);
+    const raw = await container.logs({ stdout: true, stderr: true, tail, timestamps: true }) as unknown as Buffer;
+    res.json({ lines: parseLogs(raw) });
+  } catch (err: unknown) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown' });
+  }
+});
+
 const PORT = 3001;
 app.listen(PORT, () => console.log(`Dashboard backend running on http://localhost:${PORT}`));
