@@ -3,6 +3,8 @@ import cors from 'cors';
 import * as si from 'systeminformation';
 import Docker from 'dockerode';
 import os from 'os';
+import path from 'path';
+import fs from 'fs';
 
 const app = express();
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -245,5 +247,15 @@ app.get('/api/containers/:id/logs', async (req, res) => {
   }
 });
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`Dashboard backend running on http://localhost:${PORT}`));
+// ── Serve frontend static files in production ─────────────────────────────────
+
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (_req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+const PORT = parseInt(process.env.PORT ?? '3001', 10);
+app.listen(PORT, () => console.log(`Dashboard running on http://localhost:${PORT}`));
