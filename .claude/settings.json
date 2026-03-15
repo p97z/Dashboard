@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const si = require\\(''systeminformation''\\); si.disksIO\\(\\).then\\(d => console.log\\(JSON.stringify\\(Object.keys\\(d\\)\\)\\)\\)\")"
+    ]
+  }
+}
