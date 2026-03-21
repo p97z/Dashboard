@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Activity, AlertCircle, LayoutGrid, CheckCheck, Plus, Sun, Moon, Bell, ArrowUpCircle } from 'lucide-react';
+import { DndContext, closestCenter } from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { useMetricsHistory } from './hooks/useMetricsHistory';
 import { useContainers } from './hooks/useContainers';
 import { useDashboardConfig } from './hooks/useDashboardConfig';
@@ -34,7 +37,7 @@ function App() {
 
   const { metrics, history, error: metricsError } = useMetricsHistory(selectedMachineId);
   const { containers, error: containersError, loadingIds, toggleContainer } = useContainers(selectedMachineId);
-  const { layout, addCard, removeCard, updateCard } = useDashboardConfig(metrics, selectedMachineId);
+  const { layout, addCard, removeCard, updateCard, reorderCards } = useDashboardConfig(metrics, selectedMachineId);
   const { theme, toggleTheme } = useTheme();
   const { thresholds, setThreshold, checkAlerts, isAboveThreshold, permission, requestPermission } = useAlerts();
   const hostname = useHostname(selectedMachineId);
@@ -43,7 +46,16 @@ function App() {
   const [updatesOpen, setUpdatesOpen] = useState(false);
 
   const error = metricsError || containersError;
-  const availableMetrics = metrics ? getAvailableMetrics(metrics) : [];
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = layout.cards.findIndex(c => c.id === active.id);
+    const newIndex = layout.cards.findIndex(c => c.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      reorderCards(arrayMove(layout.cards, oldIndex, newIndex));
+    }
+  }
 
   // Check alerts whenever metrics update
   useEffect(() => {
@@ -136,32 +148,35 @@ function App() {
         )}
 
         {(metrics || layout.cards.length > 0) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {layout.cards.map(card => (
-              <ConfigurableCard
-                key={card.id}
-                card={card}
-                metrics={metrics}
-                history={history}
-                availableMetrics={availableMetrics}
-                editMode={editMode}
-                thresholds={thresholds}
-                onSetThreshold={setThreshold}
-                isAboveThreshold={isAboveThreshold}
-                onUpdate={updateCard}
-                onRemove={() => removeCard(card.id)}
-              />
-            ))}
-            {editMode && (
-              <button
-                onClick={addCard}
-                className="flex flex-col items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl py-8 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
-              >
-                <Plus size={20} />
-                <span className="text-sm">Add Card</span>
-              </button>
-            )}
-          </div>
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={layout.cards.map(c => c.id)} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {layout.cards.map(card => (
+                  <ConfigurableCard
+                    key={card.id}
+                    card={card}
+                    metrics={metrics}
+                    history={history}
+                    editMode={editMode}
+                    thresholds={thresholds}
+                    onSetThreshold={setThreshold}
+                    isAboveThreshold={isAboveThreshold}
+                    onUpdate={updateCard}
+                    onRemove={() => removeCard(card.id)}
+                  />
+                ))}
+                {editMode && (
+                  <button
+                    onClick={addCard}
+                    className="flex flex-col items-center justify-center gap-2 bg-gray-100 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl py-8 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+                  >
+                    <Plus size={20} />
+                    <span className="text-sm">Add Card</span>
+                  </button>
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
 
         <ContainersTable containers={containers} loadingIds={loadingIds} onToggle={toggleContainer} />

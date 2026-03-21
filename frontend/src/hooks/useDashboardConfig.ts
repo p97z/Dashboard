@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Metrics, DashboardLayout, CardConfig } from '../types';
 
-const STORAGE_KEY_PREFIX = 'dashboard-layout-v1';
-const LEGACY_KEY = 'dashboard-layout-v1';
+const STORAGE_KEY_PREFIX = 'dashboard-layout-v2';
 
 function newId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -15,12 +14,14 @@ function buildDefaultLayout(metrics: Metrics): DashboardLayout {
       title: 'System',
       metrics: ['cpu_usage', 'cpu_temp', 'memory', 'swap', 'uptime'],
       showGraph: false,
+      chartType: 'area',
     },
     {
       id: newId(),
       title: 'Performance',
       metrics: ['load_1', 'load_5', 'load_15', 'net_connections'],
       showGraph: false,
+      chartType: 'area',
     },
   ];
 
@@ -29,12 +30,12 @@ function buildDefaultLayout(metrics: Metrics): DashboardLayout {
       ...metrics.disks.map(d => `disk:${d.mount}`),
       ...(metrics.diskIO ? ['disk_io_read', 'disk_io_write'] : []),
     ];
-    cards.push({ id: newId(), title: 'Storage', metrics: diskMetrics, showGraph: false });
+    cards.push({ id: newId(), title: 'Storage', metrics: diskMetrics, showGraph: false, chartType: 'area' });
   }
 
   if (metrics.network.length > 0) {
     const netMetrics = metrics.network.flatMap(n => [`net_rx:${n.iface}`, `net_tx:${n.iface}`]);
-    cards.push({ id: newId(), title: 'Network', metrics: netMetrics, showGraph: false });
+    cards.push({ id: newId(), title: 'Network', metrics: netMetrics, showGraph: false, chartType: 'area' });
   }
 
   const gpuMetrics = metrics.gpu
@@ -43,42 +44,44 @@ function buildDefaultLayout(metrics: Metrics): DashboardLayout {
       ...(g.temperatureGpu !== null ? [`gpu_temp:${g.index}`] : []),
     ]);
   if (gpuMetrics.length > 0) {
-    cards.push({ id: newId(), title: 'GPU', metrics: gpuMetrics, showGraph: false });
+    cards.push({ id: newId(), title: 'GPU', metrics: gpuMetrics, showGraph: false, chartType: 'area' });
   }
 
   if (metrics.fans.length > 0) {
-    cards.push({ id: newId(), title: 'Cooling', metrics: metrics.fans.map(f => `fan:${f.index}`), showGraph: false });
+    cards.push({ id: newId(), title: 'Cooling', metrics: metrics.fans.map(f => `fan:${f.index}`), showGraph: false, chartType: 'area' });
   }
 
   return { cards };
+}
+
+function normalizeCard(card: CardConfig): CardConfig {
+  return { ...card, chartType: card.chartType ?? 'area' };
 }
 
 export function useDashboardConfig(metrics: Metrics | null, machineId: string = 'local') {
   const storageKey = `${STORAGE_KEY_PREFIX}-${machineId}`;
 
   const [layout, setLayoutState] = useState<DashboardLayout | null>(() => {
-    // One-time migration: move old unscoped key to the local-scoped key
-    try {
-      const legacyData = localStorage.getItem(LEGACY_KEY);
-      if (legacyData && !localStorage.getItem(`${STORAGE_KEY_PREFIX}-local`)) {
-        localStorage.setItem(`${STORAGE_KEY_PREFIX}-local`, legacyData);
-        localStorage.removeItem(LEGACY_KEY);
-      }
-    } catch { /* ignore */ }
-
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? (JSON.parse(saved) as DashboardLayout) : null;
-    } catch {
-      return null;
-    }
+      if (saved) {
+        const parsed = JSON.parse(saved) as DashboardLayout;
+        return { cards: parsed.cards.map(normalizeCard) };
+      }
+    } catch { /* ignore */ }
+    return null;
   });
 
   // Reload layout from localStorage when machine changes
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      setLayoutState(saved ? (JSON.parse(saved) as DashboardLayout) : null);
+      if (saved) {
+        const parsed = JSON.parse(saved) as DashboardLayout;
+        setLayoutState({ cards: parsed.cards.map(normalizeCard) });
+      } else {
+        setLayoutState(null);
+      }
     } catch {
       setLayoutState(null);
     }
@@ -95,14 +98,10 @@ export function useDashboardConfig(metrics: Metrics | null, machineId: string = 
     if (layout) localStorage.setItem(storageKey, JSON.stringify(layout));
   }, [layout, storageKey]);
 
-  function setLayout(next: DashboardLayout) {
-    setLayoutState(next);
-  }
-
   function addCard() {
     setLayoutState(prev => {
       if (!prev) return prev;
-      const card: CardConfig = { id: newId(), title: 'New Card', metrics: [], showGraph: false };
+      const card: CardConfig = { id: newId(), title: 'New Card', metrics: [], showGraph: false, chartType: 'area' };
       return { cards: [...prev.cards, card] };
     });
   }
@@ -121,11 +120,15 @@ export function useDashboardConfig(metrics: Metrics | null, machineId: string = 
     });
   }
 
+  function reorderCards(newOrder: CardConfig[]) {
+    setLayoutState({ cards: newOrder });
+  }
+
   return {
     layout: layout ?? { cards: [] },
-    setLayout,
     addCard,
     removeCard,
     updateCard,
+    reorderCards,
   };
 }

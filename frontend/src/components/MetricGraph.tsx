@@ -13,6 +13,7 @@ import type { HistoryPoint, MetricKey } from '../types';
 import {
   getMetricDomain,
   getMetricStroke,
+  getMetricValueColor,
   formatMetricValue,
   getMetricLabel,
 } from '../utils';
@@ -20,7 +21,6 @@ import {
 interface MetricGraphProps {
   history: HistoryPoint[];
   metricKey: MetricKey;
-  chartType?: 'area' | 'pie';
 }
 
 interface ChartPoint {
@@ -77,7 +77,7 @@ export function MetricDonutGauge({ metricKey, value }: { metricKey: MetricKey; v
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-none text-center px-1">
+          <span className={`text-xs font-semibold leading-none text-center px-1 ${getMetricValueColor(metricKey, value)}`}>
             {formatted}
           </span>
         </div>
@@ -89,7 +89,7 @@ export function MetricDonutGauge({ metricKey, value }: { metricKey: MetricKey; v
   );
 }
 
-export function MetricGraph({ history, metricKey, chartType }: MetricGraphProps) {
+export function MetricGraph({ history, metricKey }: MetricGraphProps) {
   const stroke = getMetricStroke(metricKey);
   const [domainMin, domainMax] = getMetricDomain(metricKey);
 
@@ -102,11 +102,6 @@ export function MetricGraph({ history, metricKey, chartType }: MetricGraphProps)
   );
 
   const gradientId = `grad-${metricKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
-  if (chartType === 'pie') {
-    // Donut gauge is rendered by ConfigurableCard directly via MetricDonutGauge
-    return null;
-  }
 
   if (data.length < 2) {
     return (

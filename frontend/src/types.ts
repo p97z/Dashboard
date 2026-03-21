@@ -88,7 +88,7 @@ export interface CardConfig {
   title: string;
   metrics: MetricKey[];
   showGraph: boolean;
-  chartType?: 'area' | 'pie';
+  chartType: 'area' | 'donut';
 }
 
 export interface MachineInfo {
