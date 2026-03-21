@@ -8,16 +8,19 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts';
 import type { HistoryPoint, MetricKey } from '../types';
-import { getMetricDomain, getMetricStroke, formatMetricValue, getMetricLabel } from '../utils';
+import {
+  getMetricDomain,
+  getMetricStroke,
+  formatMetricValue,
+  getMetricLabel,
+} from '../utils';
 
 interface MetricGraphProps {
   history: HistoryPoint[];
   metricKey: MetricKey;
   chartType?: 'area' | 'pie';
-  pieSlices?: Array<{ key: MetricKey; value: number | null }>;
 }
 
 interface ChartPoint {
@@ -35,54 +38,58 @@ function CustomTooltip({ active, payload }: any) {
   );
 }
 
-function MetricPieChart({ slices }: { slices: Array<{ key: MetricKey; value: number | null }> }) {
-  const data = slices
-    .filter(s => s.value !== null && s.value > 0)
-    .map(s => ({
-      name: getMetricLabel(s.key),
-      value: Math.round((s.value ?? 0) * 10) / 10,
-      fill: getMetricStroke(s.key),
-    }));
+/** Single donut gauge for one metric — shows current value as a filled arc. */
+export function MetricDonutGauge({ metricKey, value }: { metricKey: MetricKey; value: number | null }) {
+  const stroke = getMetricStroke(metricKey);
+  const label = getMetricLabel(metricKey);
+  const formatted = formatMetricValue(metricKey, value);
 
-  if (data.length === 0) {
-    return (
-      <div className="h-32 flex items-center justify-center text-gray-400 dark:text-gray-600 text-xs">
-        No data
-      </div>
-    );
-  }
+  const [, domainMax] = getMetricDomain(metricKey);
+  const max = typeof domainMax === 'number' ? domainMax : null;
+  // If we have a fixed max (0-100 range), fill proportionally. Otherwise fill fully.
+  const fillPercent = (max !== null && value !== null) ? Math.min((value / max) * 100, 100) : 100;
+
+  const data = [
+    { value: fillPercent },
+    { value: 100 - fillPercent },
+  ];
 
   return (
-    <div className="h-32 w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            cx="50%"
-            cy="50%"
-            innerRadius="35%"
-            outerRadius="65%"
-            strokeWidth={0}
-            isAnimationActive={false}
-          >
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.fill} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(v: number) => [`${v}`, '']} />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-20 h-20">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              innerRadius="60%"
+              outerRadius="80%"
+              startAngle={90}
+              endAngle={-270}
+              dataKey="value"
+              strokeWidth={0}
+              isAnimationActive={false}
+            >
+              <Cell fill={stroke} />
+              <Cell fill="rgba(107,114,128,0.2)" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-none text-center px-1">
+            {formatted}
+          </span>
+        </div>
+      </div>
+      <span className="text-xs text-gray-500 dark:text-gray-400 text-center leading-tight max-w-[80px]">
+        {label}
+      </span>
     </div>
   );
 }
 
-export function MetricGraph({ history, metricKey, chartType, pieSlices }: MetricGraphProps) {
-  if (chartType === 'pie' && pieSlices) {
-    return <MetricPieChart slices={pieSlices} />;
-  }
-
+export function MetricGraph({ history, metricKey, chartType }: MetricGraphProps) {
   const stroke = getMetricStroke(metricKey);
   const [domainMin, domainMax] = getMetricDomain(metricKey);
 
@@ -95,6 +102,11 @@ export function MetricGraph({ history, metricKey, chartType, pieSlices }: Metric
   );
 
   const gradientId = `grad-${metricKey.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  if (chartType === 'pie') {
+    // Donut gauge is rendered by ConfigurableCard directly via MetricDonutGauge
+    return null;
+  }
 
   if (data.length < 2) {
     return (

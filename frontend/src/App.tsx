@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, AlertCircle, LayoutGrid, CheckCheck, Plus, Sun, Moon, Bell } from 'lucide-react';
+import { Activity, AlertCircle, LayoutGrid, CheckCheck, Plus, Sun, Moon, Bell, ArrowUpCircle } from 'lucide-react';
 import { useMetricsHistory } from './hooks/useMetricsHistory';
 import { useContainers } from './hooks/useContainers';
 import { useDashboardConfig } from './hooks/useDashboardConfig';
@@ -12,6 +12,7 @@ import { ConfigurableCard } from './components/ConfigurableCard';
 import { ContainersTable } from './components/ContainersTable';
 import { ProcessesTable } from './components/ProcessesTable';
 import { MachineSelector } from './components/MachineSelector';
+import { UpdatesModal } from './components/UpdatesModal';
 
 function App() {
   const machines = useMachines();
@@ -39,6 +40,7 @@ function App() {
   const hostname = useHostname(selectedMachineId);
 
   const [editMode, setEditMode] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
 
   const error = metricsError || containersError;
   const availableMetrics = metrics ? getAvailableMetrics(metrics) : [];
@@ -90,6 +92,16 @@ function App() {
                 Enable alerts
               </button>
             )}
+
+            {/* Updates */}
+            <button
+              onClick={() => setUpdatesOpen(true)}
+              title="System updates"
+              className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <ArrowUpCircle size={15} />
+              <span className="hidden sm:inline">Updates</span>
+            </button>
 
             {/* Theme toggle */}
             <button
@@ -155,6 +167,14 @@ function App() {
         <ContainersTable containers={containers} loadingIds={loadingIds} onToggle={toggleContainer} />
         {metrics && <ProcessesTable processes={metrics.topProcesses} />}
       </main>
+
+      {updatesOpen && (
+        <UpdatesModal
+          machineId={selectedMachineId}
+          machineLabel={machines.find(m => m.id === selectedMachineId)?.label ?? selectedMachineId}
+          onClose={() => setUpdatesOpen(false)}
+        />
+      )}
     </div>
   );
 }

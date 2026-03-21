@@ -5,7 +5,7 @@ import type { MetricOption } from '../utils';
 import type { Thresholds } from '../hooks/useAlerts';
 import { getMetricValue } from '../utils';
 import { MetricRow } from './MetricRow';
-import { MetricGraph } from './MetricGraph';
+import { MetricGraph, MetricDonutGauge } from './MetricGraph';
 import { CardConfigModal } from './CardConfigModal';
 
 interface ConfigurableCardProps {
@@ -28,6 +28,8 @@ export function ConfigurableCard({
 }: ConfigurableCardProps) {
   const [configOpen, setConfigOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+
+  const isPie = card.chartType === 'pie';
 
   function toggleGraph() {
     onUpdate({ ...card, showGraph: !card.showGraph });
@@ -80,32 +82,29 @@ export function ConfigurableCard({
             <p className="text-gray-400 dark:text-gray-500 text-xs text-center py-2">
               No metrics — click <Settings size={11} className="inline" /> to add some
             </p>
-          ) : (
-            <>
-              {card.metrics.map(key => {
-                const value = metrics ? getMetricValue(key, metrics) : null;
-                const alert = isAboveThreshold(key, value);
-                return (
-                  <div key={key}>
-                    <MetricRow metricKey={key} value={value} alert={alert} />
-                    {card.showGraph && card.chartType !== 'pie' && (
-                      <MetricGraph history={history} metricKey={key} />
-                    )}
-                  </div>
-                );
-              })}
-              {card.showGraph && card.chartType === 'pie' && (
-                <MetricGraph
-                  history={history}
-                  metricKey={card.metrics[0] ?? 'cpu_usage'}
-                  chartType="pie"
-                  pieSlices={card.metrics.map(key => ({
-                    key,
-                    value: metrics ? getMetricValue(key, metrics) : null,
-                  }))}
+          ) : isPie && card.showGraph ? (
+            /* Donut gauge grid — one gauge per metric */
+            <div className="grid grid-cols-3 gap-3 py-1 justify-items-center">
+              {card.metrics.map(key => (
+                <MetricDonutGauge
+                  key={key}
+                  metricKey={key}
+                  value={metrics ? getMetricValue(key, metrics) : null}
                 />
-              )}
-            </>
+              ))}
+            </div>
+          ) : (
+            /* Standard metric rows with optional area graphs */
+            card.metrics.map(key => {
+              const value = metrics ? getMetricValue(key, metrics) : null;
+              const alert = isAboveThreshold(key, value);
+              return (
+                <div key={key}>
+                  <MetricRow metricKey={key} value={value} alert={alert} />
+                  {card.showGraph && <MetricGraph history={history} metricKey={key} />}
+                </div>
+              );
+            })
           )}
         </div>
       </div>

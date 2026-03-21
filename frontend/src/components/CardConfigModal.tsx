@@ -151,7 +151,7 @@ export function CardConfigModal({ card, availableMetrics, thresholds, onSetThres
                         : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500'
                     }`}
                   >
-                    {type === 'area' ? 'Area' : 'Pie / Donut'}
+                    {type === 'area' ? 'Area' : 'Donut Gauges'}
                   </button>
                 ))}
               </div>

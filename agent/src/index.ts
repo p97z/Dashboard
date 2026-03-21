@@ -2,6 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import * as si from 'systeminformation';
 import os from 'os';
+import fs from 'fs';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const app = express();
 app.use(cors());
@@ -14,10 +19,14 @@ app.use(express.json());
 let docker: any = null;
 
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const Docker = require('dockerode');
-  docker = new Docker({ socketPath: '/var/run/docker.sock' });
-  console.log('Docker: connected');
+  if (fs.existsSync('/var/run/docker.sock')) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Docker = require('dockerode');
+    docker = new Docker({ socketPath: '/var/run/docker.sock' });
+    console.log('Docker: connected');
+  } else {
+    console.log('Docker: socket not found — container endpoints disabled');
+  }
 } catch {
   console.log('Docker: not available — container endpoints disabled');
 }
@@ -260,6 +269,60 @@ app.get('/api/containers/:id/logs', async (req, res) => {
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown' });
   }
+});
+
+// ── System updates ────────────────────────────────────────────────────────────
+
+app.get('/api/system/updates', async (_req, res) => {
+  try {
+    const { stdout } = await execAsync('apt list --upgradable 2>/dev/null');
+    const packages = stdout.split('\n')
+      .filter(l => l && !l.startsWith('Listing'))
+      .map(l => ({
+        name: l.split('/')[0] ?? l,
+        version: l.match(/\s([\d][^\s]+)\s/)?.[1] ?? '',
+      }));
+    res.json({ count: packages.length, packages });
+  } catch {
+    res.json({ count: 0, packages: [] });
+  }
+});
+
+app.post('/api/system/upgrade', (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const proc = spawn(
+    'sudo', ['-S', 'bash', '-c',
+      'DEBIAN_FRONTEND=noninteractive apt-get update 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1'],
+    { stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+  proc.stdin.write(password + '\n');
+  proc.stdin.end();
+
+  proc.stdout.on('data', (d: Buffer) => res.write(d));
+  proc.stderr.on('data', (d: Buffer) => res.write(d));
+
+  const timer = setTimeout(() => { proc.kill(); res.write('\n[TIMEOUT]\n'); res.end(); }, 300000);
+  proc.on('close', code => {
+    clearTimeout(timer);
+    res.write(`\n[${code === 0 ? 'DONE' : `FAILED (exit ${code})`}]\n`);
+    res.end();
+  });
+});
+
+app.post('/api/system/reboot', (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  res.json({ success: true });
+  setTimeout(() => {
+    const proc = spawn('sudo', ['-S', 'reboot'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    proc.stdin.write(password + '\n');
+    proc.stdin.end();
+  }, 500);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

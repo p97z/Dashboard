@@ -5,6 +5,10 @@ import Docker from 'dockerode';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { spawn, exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const app = express();
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -238,6 +242,52 @@ function getLocalInfo(): { hostname: string } {
   return { hostname: os.hostname() };
 }
 
+// ── System updates ────────────────────────────────────────────────────────────
+
+interface PackageUpdate {
+  name: string;
+  version: string;
+}
+
+async function getLocalUpdates(): Promise<{ count: number; packages: PackageUpdate[] }> {
+  try {
+    const { stdout } = await execAsync('apt list --upgradable 2>/dev/null');
+    const packages = stdout.split('\n')
+      .filter(l => l && !l.startsWith('Listing'))
+      .map(l => {
+        const name = l.split('/')[0] ?? l;
+        const version = l.match(/\s([\d][^\s]+)\s/)?.[1] ?? '';
+        return { name, version };
+      });
+    return { count: packages.length, packages };
+  } catch {
+    return { count: 0, packages: [] };
+  }
+}
+
+function streamUpgrade(password: string, res: express.Response): void {
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  const proc = spawn(
+    'sudo', ['-S', 'bash', '-c',
+      'DEBIAN_FRONTEND=noninteractive apt-get update 2>&1 && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1'],
+    { stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+  proc.stdin.write(password + '\n');
+  proc.stdin.end();
+
+  proc.stdout.on('data', (d: Buffer) => res.write(d));
+  proc.stderr.on('data', (d: Buffer) => res.write(d));
+
+  const timer = setTimeout(() => { proc.kill(); res.write('\n[TIMEOUT]\n'); res.end(); }, 300000);
+  proc.on('close', code => {
+    clearTimeout(timer);
+    res.write(`\n[${code === 0 ? 'DONE' : `FAILED (exit ${code})`}]\n`);
+    res.end();
+  });
+}
+
 // ── Existing direct endpoints (unchanged behaviour) ───────────────────────────
 
 app.get('/api/metrics', async (_req, res) => {
@@ -287,6 +337,27 @@ app.get('/api/containers/:id/logs', async (req, res) => {
   } catch (err: unknown) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown' });
   }
+});
+
+app.get('/api/system/updates', async (_req, res) => {
+  res.json(await getLocalUpdates());
+});
+
+app.post('/api/system/upgrade', (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  streamUpgrade(password, res);
+});
+
+app.post('/api/system/reboot', (req, res) => {
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  res.json({ success: true });
+  setTimeout(() => {
+    const proc = spawn('sudo', ['-S', 'reboot'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    proc.stdin.write(password + '\n');
+    proc.stdin.end();
+  }, 500);
 });
 
 // ── Machine list ──────────────────────────────────────────────────────────────
@@ -379,6 +450,77 @@ app.get('/api/machines/:id/containers/:cid/logs', async (req, res) => {
     if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
     res.json(await upstream.json());
   } catch (err) { await sendProxyError(res, err); }
+});
+
+app.get('/api/machines/:id/system/updates', async (req, res) => {
+  const machine = findMachine(req.params.id);
+  if (!machine) return res.status(404).json({ error: 'Machine not found' });
+  try {
+    if (!machine.url) return res.json(await getLocalUpdates());
+    const upstream = await proxyFetch(machine.url, '/api/system/updates');
+    if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
+    res.json(await upstream.json());
+  } catch (err) { await sendProxyError(res, err); }
+});
+
+app.post('/api/machines/:id/system/upgrade', async (req, res) => {
+  const machine = findMachine(req.params.id);
+  if (!machine) return res.status(404).json({ error: 'Machine not found' });
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+
+  if (!machine.url) {
+    streamUpgrade(password, res);
+    return;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 310000);
+    const upstream = await fetch(`${machine.url}/api/system/upgrade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    res.setHeader('Content-Type', 'text/plain');
+    const reader = upstream.body!.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
+  } catch (err) { await sendProxyError(res, err); }
+});
+
+app.post('/api/machines/:id/system/reboot', async (req, res) => {
+  const machine = findMachine(req.params.id);
+  if (!machine) return res.status(404).json({ error: 'Machine not found' });
+  const { password } = req.body as { password?: string };
+  if (!password) return res.status(400).json({ error: 'Password required' });
+
+  if (!machine.url) {
+    res.json({ success: true });
+    setTimeout(() => {
+      const proc = spawn('sudo', ['-S', 'reboot'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      proc.stdin.write(password + '\n');
+      proc.stdin.end();
+    }, 500);
+    return;
+  }
+  try {
+    // Short timeout — machine may reboot before responding
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5000);
+    await fetch(`${machine.url}/api/system/reboot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+      signal: controller.signal,
+    }).catch(() => {});
+  } catch { /* machine likely rebooted */ }
+  res.json({ success: true });
 });
 
 // ── Serve frontend static files in production ─────────────────────────────────

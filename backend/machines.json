@@ -9,7 +9,7 @@
     {
       "id": "rpi",
       "label": "Raspberry Pi",
-      "url": "http://192.168.1.X:3002",
+      "url": "http://192.168.86.43:3002",
       "description": "Raspberry Pi — update the URL to match your RPi's IP address"
     }
   ]
