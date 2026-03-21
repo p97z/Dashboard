@@ -88,6 +88,13 @@ export interface CardConfig {
   title: string;
   metrics: MetricKey[];
   showGraph: boolean;
+  chartType?: 'area' | 'pie';
+}
+
+export interface MachineInfo {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 export interface DashboardLayout {

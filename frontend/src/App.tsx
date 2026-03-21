@@ -6,18 +6,37 @@ import { useDashboardConfig } from './hooks/useDashboardConfig';
 import { useTheme } from './hooks/useTheme';
 import { useAlerts } from './hooks/useAlerts';
 import { useHostname } from './hooks/useHostname';
+import { useMachines } from './hooks/useMachines';
 import { getAvailableMetrics, getMetricValue } from './utils';
 import { ConfigurableCard } from './components/ConfigurableCard';
 import { ContainersTable } from './components/ContainersTable';
 import { ProcessesTable } from './components/ProcessesTable';
+import { MachineSelector } from './components/MachineSelector';
 
 function App() {
-  const { metrics, history, error: metricsError } = useMetricsHistory();
-  const { containers, error: containersError, loadingIds, toggleContainer } = useContainers();
-  const { layout, addCard, removeCard, updateCard } = useDashboardConfig(metrics);
+  const machines = useMachines();
+  const [selectedMachineId, setSelectedMachineId] = useState<string>(() =>
+    localStorage.getItem('selected-machine') ?? 'local'
+  );
+
+  // Persist selected machine
+  useEffect(() => {
+    localStorage.setItem('selected-machine', selectedMachineId);
+  }, [selectedMachineId]);
+
+  // Reset to local if the selected machine is no longer in the list
+  useEffect(() => {
+    if (machines.length > 0 && !machines.find(m => m.id === selectedMachineId)) {
+      setSelectedMachineId('local');
+    }
+  }, [machines, selectedMachineId]);
+
+  const { metrics, history, error: metricsError } = useMetricsHistory(selectedMachineId);
+  const { containers, error: containersError, loadingIds, toggleContainer } = useContainers(selectedMachineId);
+  const { layout, addCard, removeCard, updateCard } = useDashboardConfig(metrics, selectedMachineId);
   const { theme, toggleTheme } = useTheme();
   const { thresholds, setThreshold, checkAlerts, isAboveThreshold, permission, requestPermission } = useAlerts();
-  const hostname = useHostname();
+  const hostname = useHostname(selectedMachineId);
 
   const [editMode, setEditMode] = useState(false);
 
@@ -40,6 +59,12 @@ function App() {
         <div className="max-w-7xl mx-auto flex items-center gap-3">
           <Activity size={22} className="text-blue-500 dark:text-blue-400 shrink-0" />
           <h1 className="text-lg font-semibold">{hostname}</h1>
+
+          <MachineSelector
+            machines={machines}
+            selectedId={selectedMachineId}
+            onSelect={id => { setSelectedMachineId(id); setEditMode(false); }}
+          />
 
           <div className="ml-auto flex items-center gap-2">
             {error ? (

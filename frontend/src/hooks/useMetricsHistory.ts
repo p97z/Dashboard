@@ -4,23 +4,31 @@ import { getMetricValue, getAvailableMetrics } from '../utils';
 
 const MAX_HISTORY = 60; // 60 × 3 s = 3 minutes
 
-export function useMetricsHistory() {
+export function useMetricsHistory(machineId?: string) {
+  const endpoint = (!machineId || machineId === 'local')
+    ? '/api/metrics'
+    : `/api/machines/${machineId}/metrics`;
+
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
   const metricsRef = useRef<Metrics | null>(null);
 
   useEffect(() => {
+    setMetrics(null);
+    setHistory([]);
+    setError(null);
+    metricsRef.current = null;
+
     const fetchMetrics = async () => {
       try {
-        const res = await fetch('/api/metrics');
+        const res = await fetch(endpoint);
         if (!res.ok) throw new Error('Failed to fetch metrics');
         const data: Metrics = await res.json();
         metricsRef.current = data;
         setMetrics(data);
         setError(null);
 
-        // Build a flat values snapshot for all known metric keys
         const keys = getAvailableMetrics(data).map(o => o.key);
         const values: Record<string, number | null> = {};
         for (const key of keys) {
@@ -40,7 +48,7 @@ export function useMetricsHistory() {
     fetchMetrics();
     const id = setInterval(fetchMetrics, 3000);
     return () => clearInterval(id);
-  }, []);
+  }, [endpoint]);
 
   return { metrics, history, error };
 }

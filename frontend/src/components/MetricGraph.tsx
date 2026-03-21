@@ -5,13 +5,19 @@ import {
   ResponsiveContainer,
   Tooltip,
   YAxis,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from 'recharts';
 import type { HistoryPoint, MetricKey } from '../types';
-import { getMetricDomain, getMetricStroke, formatMetricValue } from '../utils';
+import { getMetricDomain, getMetricStroke, formatMetricValue, getMetricLabel } from '../utils';
 
 interface MetricGraphProps {
   history: HistoryPoint[];
   metricKey: MetricKey;
+  chartType?: 'area' | 'pie';
+  pieSlices?: Array<{ key: MetricKey; value: number | null }>;
 }
 
 interface ChartPoint {
@@ -29,7 +35,54 @@ function CustomTooltip({ active, payload }: any) {
   );
 }
 
-export function MetricGraph({ history, metricKey }: MetricGraphProps) {
+function MetricPieChart({ slices }: { slices: Array<{ key: MetricKey; value: number | null }> }) {
+  const data = slices
+    .filter(s => s.value !== null && s.value > 0)
+    .map(s => ({
+      name: getMetricLabel(s.key),
+      value: Math.round((s.value ?? 0) * 10) / 10,
+      fill: getMetricStroke(s.key),
+    }));
+
+  if (data.length === 0) {
+    return (
+      <div className="h-32 flex items-center justify-center text-gray-400 dark:text-gray-600 text-xs">
+        No data
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-32 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            cx="50%"
+            cy="50%"
+            innerRadius="35%"
+            outerRadius="65%"
+            strokeWidth={0}
+            isAnimationActive={false}
+          >
+            {data.map((entry, i) => (
+              <Cell key={i} fill={entry.fill} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v: number) => [`${v}`, '']} />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function MetricGraph({ history, metricKey, chartType, pieSlices }: MetricGraphProps) {
+  if (chartType === 'pie' && pieSlices) {
+    return <MetricPieChart slices={pieSlices} />;
+  }
+
   const stroke = getMetricStroke(metricKey);
   const [domainMin, domainMax] = getMetricDomain(metricKey);
 

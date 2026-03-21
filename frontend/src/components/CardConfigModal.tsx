@@ -18,6 +18,7 @@ export function CardConfigModal({ card, availableMetrics, thresholds, onSetThres
   const [title, setTitle] = useState(card.title);
   const [selected, setSelected] = useState<Set<MetricKey>>(new Set(card.metrics));
   const [showGraph, setShowGraph] = useState(card.showGraph);
+  const [chartType, setChartType] = useState<'area' | 'pie'>(card.chartType ?? 'area');
   // Local threshold edits — committed on blur/change
   const [localThresholds, setLocalThresholds] = useState<Record<string, string>>(() => {
     const result: Record<string, string> = {};
@@ -53,7 +54,7 @@ export function CardConfigModal({ card, availableMetrics, thresholds, onSetThres
     for (const key of selected) {
       if (!ordered.includes(key)) ordered.push(key);
     }
-    onSave({ ...card, title, metrics: ordered, showGraph });
+    onSave({ ...card, title, metrics: ordered, showGraph, chartType });
   }
 
   const groups: Record<string, MetricOption[]> = {};
@@ -134,6 +135,28 @@ export function CardConfigModal({ card, availableMetrics, thresholds, onSetThres
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${showGraph ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
           </label>
+
+          {/* Chart type selector (visible only when graphs are on) */}
+          {showGraph && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide">Chart Type</label>
+              <div className="flex gap-2">
+                {(['area', 'pie'] as const).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setChartType(type)}
+                    className={`flex-1 py-1.5 text-sm rounded-lg border transition-colors ${
+                      chartType === type
+                        ? 'bg-blue-600 border-blue-500 text-white'
+                        : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500'
+                    }`}
+                  >
+                    {type === 'area' ? 'Area' : 'Pie / Donut'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 px-5 py-4 border-t border-gray-100 dark:border-gray-700">

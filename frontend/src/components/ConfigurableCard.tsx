@@ -81,16 +81,31 @@ export function ConfigurableCard({
               No metrics — click <Settings size={11} className="inline" /> to add some
             </p>
           ) : (
-            card.metrics.map(key => {
-              const value = metrics ? getMetricValue(key, metrics) : null;
-              const alert = isAboveThreshold(key, value);
-              return (
-                <div key={key}>
-                  <MetricRow metricKey={key} value={value} alert={alert} />
-                  {card.showGraph && <MetricGraph history={history} metricKey={key} />}
-                </div>
-              );
-            })
+            <>
+              {card.metrics.map(key => {
+                const value = metrics ? getMetricValue(key, metrics) : null;
+                const alert = isAboveThreshold(key, value);
+                return (
+                  <div key={key}>
+                    <MetricRow metricKey={key} value={value} alert={alert} />
+                    {card.showGraph && card.chartType !== 'pie' && (
+                      <MetricGraph history={history} metricKey={key} />
+                    )}
+                  </div>
+                );
+              })}
+              {card.showGraph && card.chartType === 'pie' && (
+                <MetricGraph
+                  history={history}
+                  metricKey={card.metrics[0] ?? 'cpu_usage'}
+                  chartType="pie"
+                  pieSlices={card.metrics.map(key => ({
+                    key,
+                    value: metrics ? getMetricValue(key, metrics) : null,
+                  }))}
+                />
+              )}
+            </>
           )}
         </div>
       </div>

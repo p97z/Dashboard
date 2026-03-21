@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { Metrics, DashboardLayout, CardConfig } from '../types';
 
-const STORAGE_KEY = 'dashboard-layout-v1';
+const STORAGE_KEY_PREFIX = 'dashboard-layout-v1';
+const LEGACY_KEY = 'dashboard-layout-v1';
 
 function newId(): string {
   return `card-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -52,15 +53,36 @@ function buildDefaultLayout(metrics: Metrics): DashboardLayout {
   return { cards };
 }
 
-export function useDashboardConfig(metrics: Metrics | null) {
+export function useDashboardConfig(metrics: Metrics | null, machineId: string = 'local') {
+  const storageKey = `${STORAGE_KEY_PREFIX}-${machineId}`;
+
   const [layout, setLayoutState] = useState<DashboardLayout | null>(() => {
+    // One-time migration: move old unscoped key to the local-scoped key
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const legacyData = localStorage.getItem(LEGACY_KEY);
+      if (legacyData && !localStorage.getItem(`${STORAGE_KEY_PREFIX}-local`)) {
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}-local`, legacyData);
+        localStorage.removeItem(LEGACY_KEY);
+      }
+    } catch { /* ignore */ }
+
+    try {
+      const saved = localStorage.getItem(storageKey);
       return saved ? (JSON.parse(saved) as DashboardLayout) : null;
     } catch {
       return null;
     }
   });
+
+  // Reload layout from localStorage when machine changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      setLayoutState(saved ? (JSON.parse(saved) as DashboardLayout) : null);
+    } catch {
+      setLayoutState(null);
+    }
+  }, [storageKey]);
 
   // First time we get metrics and have no saved layout, build defaults
   useEffect(() => {
@@ -70,8 +92,8 @@ export function useDashboardConfig(metrics: Metrics | null) {
 
   // Persist every change
   useEffect(() => {
-    if (layout) localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
-  }, [layout]);
+    if (layout) localStorage.setItem(storageKey, JSON.stringify(layout));
+  }, [layout, storageKey]);
 
   function setLayout(next: DashboardLayout) {
     setLayoutState(next);
