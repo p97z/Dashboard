@@ -184,7 +184,19 @@ async function getLocalMetrics(): Promise<unknown> {
   };
 }
 
-async function getLocalContainers(): Promise<unknown[]> {
+function getContainerWebUrl(hostname: string, c: Docker.ContainerInfo): string | null {
+  if (c.State !== 'running') return null;
+  const labelUrl = c.Labels?.['dashboard.url'];
+  if (labelUrl) return labelUrl;
+  const tcpPorts = (c.Ports ?? [])
+    .filter(p => p.Type === 'tcp' && p.PublicPort > 0)
+    .sort((a, b) => a.PublicPort - b.PublicPort);
+  if (tcpPorts.length === 0) return null;
+  const port = tcpPorts[0].PublicPort;
+  return port === 443 ? `https://${hostname}` : `http://${hostname}:${port}`;
+}
+
+async function getLocalContainers(hostname: string): Promise<unknown[]> {
   const list = await docker.listContainers({ all: true });
 
   const enriched = await Promise.allSettled(
@@ -223,6 +235,7 @@ async function getLocalContainers(): Promise<unknown[]> {
         cpuPercent,
         memUsed,
         memPercent,
+        webUrl: getContainerWebUrl(hostname, c),
       };
     })
   );
@@ -240,6 +253,88 @@ async function getLocalLogs(id: string, tail: number): Promise<{ lines: LogLine[
 
 function getLocalInfo(): { hostname: string } {
   return { hostname: os.hostname() };
+}
+
+async function getLocalHardwareInfo(): Promise<unknown> {
+  const [cpuRes, memRes, diskRes, osRes, sysRes, graphicsRes, netRes, boardRes] =
+    await Promise.allSettled([
+      si.cpu(),
+      si.mem(),
+      si.diskLayout(),
+      si.osInfo(),
+      si.system(),
+      si.graphics(),
+      si.networkInterfaces(),
+      si.baseboard(),
+    ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cpu = cpuRes.status === 'fulfilled' ? cpuRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mem = memRes.status === 'fulfilled' ? memRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const diskList = diskRes.status === 'fulfilled' ? (diskRes.value as any[]) : [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const osData = osRes.status === 'fulfilled' ? osRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sysData = sysRes.status === 'fulfilled' ? sysRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphicsData = graphicsRes.status === 'fulfilled' ? graphicsRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const netList = netRes.status === 'fulfilled' ? (netRes.value as any[]) : [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const boardData = boardRes.status === 'fulfilled' ? boardRes.value as any : null;
+
+  return {
+    cpu: cpu ? {
+      brand: cpu.brand ?? '',
+      manufacturer: cpu.manufacturer ?? '',
+      speed: cpu.speed ?? 0,
+      cores: cpu.cores ?? 0,
+      physicalCores: cpu.physicalCores ?? 0,
+    } : { brand: '', manufacturer: '', speed: 0, cores: 0, physicalCores: 0 },
+    memory: { total: mem?.total ?? 0 },
+    disks: diskList.map((d) => ({
+      device: d.device ?? '',
+      name: d.name ?? '',
+      type: d.type ?? '',
+      size: d.size ?? 0,
+      vendor: d.vendor ?? '',
+      interfaceType: d.interfaceType ?? '',
+    })),
+    os: osData ? {
+      platform: osData.platform ?? '',
+      distro: osData.distro ?? '',
+      release: osData.release ?? '',
+      arch: osData.arch ?? '',
+      kernel: osData.kernel ?? '',
+      hostname: osData.hostname ?? '',
+    } : { platform: '', distro: '', release: '', arch: '', kernel: '', hostname: '' },
+    system: sysData ? {
+      manufacturer: sysData.manufacturer ?? '',
+      model: sysData.model ?? '',
+      virtual: sysData.virtual ?? false,
+    } : null,
+    gpu: graphicsData?.controllers
+      ? graphicsData.controllers.map((c: { vendor?: string; model?: string; vram?: number | null }) => ({
+          vendor: c.vendor ?? '',
+          model: c.model ?? '',
+          vram: c.vram ?? null,
+        }))
+      : [],
+    network: netList
+      .filter((n) => !n.internal && n.iface !== 'lo')
+      .map((n) => ({
+        iface: n.iface ?? '',
+        mac: n.mac ?? '',
+        type: n.type ?? '',
+        ip4: n.ip4 ?? '',
+      })),
+    baseboard: boardData ? {
+      manufacturer: boardData.manufacturer ?? '',
+      model: boardData.model ?? '',
+    } : null,
+  };
 }
 
 // ── System updates ────────────────────────────────────────────────────────────
@@ -299,9 +394,9 @@ app.get('/api/metrics', async (_req, res) => {
   }
 });
 
-app.get('/api/containers', async (_req, res) => {
+app.get('/api/containers', async (req, res) => {
   try {
-    res.json(await getLocalContainers());
+    res.json(await getLocalContainers(req.hostname));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to list containers' });
@@ -328,6 +423,15 @@ app.post('/api/containers/:id/stop', async (req, res) => {
 
 app.get('/api/info', (_req, res) => {
   res.json(getLocalInfo());
+});
+
+app.get('/api/hardware-info', async (_req, res) => {
+  try {
+    res.json(await getLocalHardwareInfo());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to retrieve hardware info' });
+  }
 });
 
 app.get('/api/containers/:id/logs', async (req, res) => {
@@ -401,11 +505,22 @@ app.get('/api/machines/:id/info', async (req, res) => {
   } catch (err) { await sendProxyError(res, err); }
 });
 
+app.get('/api/machines/:id/hardware-info', async (req, res) => {
+  const machine = findMachine(req.params.id);
+  if (!machine) return res.status(404).json({ error: 'Machine not found' });
+  try {
+    if (!machine.url) return res.json(await getLocalHardwareInfo());
+    const upstream = await proxyFetch(machine.url, '/api/hardware-info');
+    if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
+    res.json(await upstream.json());
+  } catch (err) { await sendProxyError(res, err); }
+});
+
 app.get('/api/machines/:id/containers', async (req, res) => {
   const machine = findMachine(req.params.id);
   if (!machine) return res.status(404).json({ error: 'Machine not found' });
   try {
-    if (!machine.url) return res.json(await getLocalContainers());
+    if (!machine.url) return res.json(await getLocalContainers(req.hostname));
     const upstream = await proxyFetch(machine.url, '/api/containers');
     if (!upstream.ok) throw new Error(`HTTP ${upstream.status}`);
     res.json(await upstream.json());

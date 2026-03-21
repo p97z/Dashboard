@@ -63,6 +63,7 @@ export interface Container {
   cpuPercent: number | null;
   memUsed: number | null;
   memPercent: number | null;
+  webUrl: string | null;
 }
 
 // Metric key naming convention:
@@ -104,4 +105,53 @@ export interface DashboardLayout {
 export interface HistoryPoint {
   t: number;
   values: Record<string, number | null>;
+}
+
+export interface HardwareInfo {
+  cpu: {
+    brand: string;
+    manufacturer: string;
+    speed: number;
+    cores: number;
+    physicalCores: number;
+  };
+  memory: {
+    total: number;
+  };
+  disks: Array<{
+    device: string;
+    name: string;
+    type: string;
+    size: number;
+    vendor: string;
+    interfaceType: string;
+  }>;
+  os: {
+    platform: string;
+    distro: string;
+    release: string;
+    arch: string;
+    kernel: string;
+    hostname: string;
+  };
+  system: {
+    manufacturer: string;
+    model: string;
+    virtual: boolean;
+  } | null;
+  gpu: Array<{
+    vendor: string;
+    model: string;
+    vram: number | null;
+  }>;
+  network: Array<{
+    iface: string;
+    mac: string;
+    type: string;
+    ip4: string;
+  }>;
+  baseboard: {
+    manufacturer: string;
+    model: string;
+  } | null;
 }

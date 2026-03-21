@@ -173,7 +173,20 @@ app.get('/api/metrics', async (_req, res) => {
 
 // ── Containers ────────────────────────────────────────────────────────────────
 
-app.get('/api/containers', async (_req, res) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getContainerWebUrl(hostname: string, c: any): string | null {
+  if (c.State !== 'running') return null;
+  const labelUrl = c.Labels?.['dashboard.url'];
+  if (labelUrl) return labelUrl;
+  const tcpPorts = (c.Ports ?? [])
+    .filter((p: any) => p.Type === 'tcp' && p.PublicPort > 0)
+    .sort((a: any, b: any) => a.PublicPort - b.PublicPort);
+  if (tcpPorts.length === 0) return null;
+  const port = tcpPorts[0].PublicPort;
+  return port === 443 ? `https://${hostname}` : `http://${hostname}:${port}`;
+}
+
+app.get('/api/containers', async (req, res) => {
   if (!docker) return res.json([]);
   try {
     const list = await docker.listContainers({ all: true });
@@ -216,6 +229,7 @@ app.get('/api/containers', async (_req, res) => {
           cpuPercent,
           memUsed,
           memPercent,
+          webUrl: getContainerWebUrl(req.hostname, c),
         };
       })
     );
@@ -255,6 +269,99 @@ app.post('/api/containers/:id/stop', async (req, res) => {
 
 app.get('/api/info', (_req, res) => {
   res.json({ hostname: os.hostname() });
+});
+
+// ── Hardware Info ──────────────────────────────────────────────────────────────
+
+async function getLocalHardwareInfo(): Promise<unknown> {
+  const [cpuRes, memRes, diskRes, osRes, sysRes, graphicsRes, netRes, boardRes] =
+    await Promise.allSettled([
+      si.cpu(),
+      si.mem(),
+      si.diskLayout(),
+      si.osInfo(),
+      si.system(),
+      si.graphics(),
+      si.networkInterfaces(),
+      si.baseboard(),
+    ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cpu = cpuRes.status === 'fulfilled' ? cpuRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mem = memRes.status === 'fulfilled' ? memRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const diskList = diskRes.status === 'fulfilled' ? (diskRes.value as any[]) : [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const osData = osRes.status === 'fulfilled' ? osRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sysData = sysRes.status === 'fulfilled' ? sysRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphicsData = graphicsRes.status === 'fulfilled' ? graphicsRes.value as any : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const netList = netRes.status === 'fulfilled' ? (netRes.value as any[]) : [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const boardData = boardRes.status === 'fulfilled' ? boardRes.value as any : null;
+
+  return {
+    cpu: cpu ? {
+      brand: cpu.brand ?? '',
+      manufacturer: cpu.manufacturer ?? '',
+      speed: cpu.speed ?? 0,
+      cores: cpu.cores ?? 0,
+      physicalCores: cpu.physicalCores ?? 0,
+    } : { brand: '', manufacturer: '', speed: 0, cores: 0, physicalCores: 0 },
+    memory: { total: mem?.total ?? 0 },
+    disks: diskList.map((d) => ({
+      device: d.device ?? '',
+      name: d.name ?? '',
+      type: d.type ?? '',
+      size: d.size ?? 0,
+      vendor: d.vendor ?? '',
+      interfaceType: d.interfaceType ?? '',
+    })),
+    os: osData ? {
+      platform: osData.platform ?? '',
+      distro: osData.distro ?? '',
+      release: osData.release ?? '',
+      arch: osData.arch ?? '',
+      kernel: osData.kernel ?? '',
+      hostname: osData.hostname ?? '',
+    } : { platform: '', distro: '', release: '', arch: '', kernel: '', hostname: '' },
+    system: sysData ? {
+      manufacturer: sysData.manufacturer ?? '',
+      model: sysData.model ?? '',
+      virtual: sysData.virtual ?? false,
+    } : null,
+    gpu: graphicsData?.controllers
+      ? graphicsData.controllers.map((c: { vendor?: string; model?: string; vram?: number | null }) => ({
+          vendor: c.vendor ?? '',
+          model: c.model ?? '',
+          vram: c.vram ?? null,
+        }))
+      : [],
+    network: netList
+      .filter((n) => !n.internal && n.iface !== 'lo')
+      .map((n) => ({
+        iface: n.iface ?? '',
+        mac: n.mac ?? '',
+        type: n.type ?? '',
+        ip4: n.ip4 ?? '',
+      })),
+    baseboard: boardData ? {
+      manufacturer: boardData.manufacturer ?? '',
+      model: boardData.model ?? '',
+    } : null,
+  };
+}
+
+app.get('/api/hardware-info', async (_req, res) => {
+  try {
+    res.json(await getLocalHardwareInfo());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to retrieve hardware info' });
+  }
 });
 
 // ── Container Logs ────────────────────────────────────────────────────────────

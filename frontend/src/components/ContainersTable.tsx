@@ -43,7 +43,10 @@ export function ContainersTable({ containers, loadingIds, onToggle }: Containers
                 return (
                   <div key={c.id} className="px-4 py-3 flex flex-col gap-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono font-medium text-sm text-gray-800 dark:text-white truncate">{name}</span>
+                      {c.webUrl
+                        ? <a href={c.webUrl} target="_blank" rel="noopener noreferrer" className="font-mono font-medium text-sm text-blue-500 dark:text-blue-400 hover:underline truncate">{name}</a>
+                        : <span className="font-mono font-medium text-sm text-gray-800 dark:text-white truncate">{name}</span>
+                      }
                       <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${isRunning ? 'bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/20' : 'bg-gray-100 dark:bg-gray-600/30 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600/30'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-green-500 dark:bg-green-400' : 'bg-gray-400'}`} />
                         {c.state}
@@ -105,7 +108,12 @@ export function ContainersTable({ containers, loadingIds, onToggle }: Containers
                     const name = container.names[0] || container.id.slice(0, 12);
                     return (
                       <tr key={container.id} className="border-b border-gray-50 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                        <td className="px-5 py-3 text-sm font-medium text-gray-800 dark:text-white font-mono">{name}</td>
+                        <td className="px-5 py-3 text-sm font-medium font-mono">
+                          {container.webUrl
+                            ? <a href={container.webUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 dark:text-blue-400 hover:underline">{name}</a>
+                            : <span className="text-gray-800 dark:text-white">{name}</span>
+                          }
+                        </td>
                         <td className="px-5 py-3 text-sm text-gray-400 dark:text-gray-400 font-mono max-w-[200px] truncate">{container.image}</td>
                         <td className="px-5 py-3">
                           <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${isRunning ? 'bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border-green-200 dark:border-green-500/20' : 'bg-gray-100 dark:bg-gray-600/30 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600/30'}`}>

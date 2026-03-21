@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, AlertCircle, LayoutGrid, CheckCheck, Plus, Sun, Moon, Bell, ArrowUpCircle } from 'lucide-react';
+import { Activity, AlertCircle, LayoutGrid, CheckCheck, Plus, Sun, Moon, Bell, ArrowUpCircle, Cpu } from 'lucide-react';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
@@ -16,6 +16,7 @@ import { ContainersTable } from './components/ContainersTable';
 import { ProcessesTable } from './components/ProcessesTable';
 import { MachineSelector } from './components/MachineSelector';
 import { UpdatesModal } from './components/UpdatesModal';
+import { HardwareInfoModal } from './components/HardwareInfoModal';
 
 function App() {
   const machines = useMachines();
@@ -44,6 +45,7 @@ function App() {
 
   const [editMode, setEditMode] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
+  const [hardwareOpen, setHardwareOpen] = useState(false);
 
   const error = metricsError || containersError;
 
@@ -104,6 +106,16 @@ function App() {
                 Enable alerts
               </button>
             )}
+
+            {/* Hardware Info */}
+            <button
+              onClick={() => setHardwareOpen(true)}
+              title="Hardware info"
+              className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <Cpu size={15} />
+              <span className="hidden sm:inline">Hardware</span>
+            </button>
 
             {/* Updates */}
             <button
@@ -182,6 +194,13 @@ function App() {
         <ContainersTable containers={containers} loadingIds={loadingIds} onToggle={toggleContainer} />
         {metrics && <ProcessesTable processes={metrics.topProcesses} />}
       </main>
+
+      {hardwareOpen && (
+        <HardwareInfoModal
+          machineId={selectedMachineId}
+          onClose={() => setHardwareOpen(false)}
+        />
+      )}
 
       {updatesOpen && (
         <UpdatesModal
