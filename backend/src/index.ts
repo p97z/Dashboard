@@ -127,9 +127,9 @@ async function getLocalMetrics(): Promise<unknown> {
     },
     memory: {
       total: memory?.total ?? 0,
-      used: memory?.used ?? 0,
+      used: memory?.active ?? 0,
       free: memory?.free ?? 0,
-      usedPercent: memory ? Math.round((memory.used / memory.total) * 100) : 0,
+      usedPercent: memory ? Math.round((memory.active / memory.total) * 100) : 0,
       swapTotal: memory?.swaptotal ?? 0,
       swapUsed: memory?.swapused ?? 0,
       swapPercent: memory?.swaptotal
